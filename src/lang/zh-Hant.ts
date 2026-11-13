@@ -2169,6 +2169,8 @@ export const languageChineseTraditional = {
         "刪除後無法復原；若其中有重要內容，請先建立備份。清除後再執行上方的「清理 SQLite 額外空間」，才能實際縮小檔案",
     "storageOrphanUnavailable":
         "目前尚無法掃描。請等資料庫載入伺服器記憶體後再重新整理",
+    "storageOrphanDownloadAll": "下載所有未被引用的媒體",
+    "storageOrphanLoading": "正在下載未被引用的媒體...",
     "storageOrphanPurge": "清除未被引用的媒體",
     "storageOrphanPurging": "正在清除未被引用的媒體...",
     "storageOrphanConfirm": (count: number, size: number) =>

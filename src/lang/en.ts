@@ -2189,6 +2189,8 @@ export const languageEnglish = {
         "Deleted files cannot be recovered — make a backup first if anything here matters. After purging, run \"Clean up SQLite overhead\" above to actually shrink the file.",
     storageOrphanUnavailable:
         "Not scannable yet. Refresh once the database has been loaded into server memory.",
+    storageOrphanDownloadAll: "Download all orphan media",
+    storageOrphanLoading: "Downloading orphan media...",
     storageOrphanPurge: "Purge orphan media",
     storageOrphanPurging: "Purging orphan media...",
     storageOrphanConfirm: (count: number, size: number) =>

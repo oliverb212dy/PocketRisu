@@ -6,6 +6,7 @@
     import ShLoadingDialog from 'src/lib/UI/GUI/ShLoadingDialog.svelte'
     import ShSwitch from 'src/lib/UI/GUI/ShSwitch.svelte'
     import { Tooltip } from 'bits-ui'
+    import { zipSync } from 'fflate'
     import {
         RefreshCwIcon,
         HardDriveIcon,
@@ -20,9 +21,10 @@
         ImageOffIcon,
         GaugeIcon,
         CopyIcon,
+        DownloadIcon,
     } from '@lucide/svelte'
     import { alertConfirm, alertMd, notifyError, notifySuccess } from 'src/ts/alert'
-    import { forageStorage } from 'src/ts/globalApi.svelte'
+    import { downloadFile, forageStorage } from 'src/ts/globalApi.svelte'
     import { DBState, SystemSubmenuIndex, settingsOpen } from 'src/ts/stores.svelte'
     import { getDatabase } from 'src/ts/storage/database.svelte'
     import { changeChar } from 'src/ts/characters'
@@ -74,6 +76,11 @@
     interface ModuleStats {
         modules: ModuleBreakdown[]
     }
+    interface OrphanAsset {
+        key: string
+        name: string
+        size: number
+    }
 
     // ── State ────────────────────────────────────────────────────────────────
     let stats = $state<Stats | null>(null)
@@ -91,6 +98,9 @@
     let modError = $state<string | null>(null)
     let modElapsed = $state<number | null>(null)
     let modShown = $state(50)
+    let orphanAssets = $state<OrphanAsset[] | null>(null)
+    let orphanLoading = $state(false)
+    let orphanError = $state<string | null>(null)
 
     let optimizeOpen = $state(false)
     let optimizeMessage = $state('')
@@ -224,10 +234,46 @@
             // The per-character panel carries its own orphan tally — drop it so
             // it cannot keep showing a count we just cleared.
             characters = null
+            orphanAssets = null
+            orphanError = null
         } catch (err) {
             notifyError(language.storageOrphanFailed + ': ' + (err instanceof Error ? err.message : String(err)))
         } finally {
             optimizeOpen = false
+        }
+    }
+
+    async function downloadOrphanAssets() {
+        orphanLoading = true
+        orphanError = null
+        try {
+            const auth = await forageStorage.createAuth()
+            const res = await fetch('/api/db/assets/orphans', { headers: { 'risu-auth': auth } })
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`)
+            orphanAssets = Array.isArray(json?.assets) ? json.assets : []
+            if (orphanAssets.length === 0) return
+
+            const files: Record<string, Uint8Array> = {}
+            const usedNames = new Map<string, number>()
+            for (const asset of orphanAssets) {
+                const assetRes = await fetch(`/api/asset/${Buffer.from(asset.key, 'utf-8').toString('hex')}`, {
+                    headers: { 'risu-auth': auth },
+                })
+                if (!assetRes.ok) throw new Error(`${asset.name}: HTTP ${assetRes.status}`)
+                const baseName = asset.name || 'orphan-media'
+                const duplicateCount = usedNames.get(baseName) ?? 0
+                usedNames.set(baseName, duplicateCount + 1)
+                const extension = duplicateCount > 0 ? `-${duplicateCount}` : ''
+                files[`${baseName}${extension}`] = new Uint8Array(await assetRes.arrayBuffer())
+            }
+
+            await downloadFile('orphan-media.zip', zipSync(files, { level: 0 }))
+            notifySuccess(language.successExport)
+        } catch (err) {
+            orphanError = err instanceof Error ? err.message : String(err)
+        } finally {
+            orphanLoading = false
         }
     }
 
@@ -843,7 +889,30 @@
                 <ImageOffIcon size={16} />
                 {language.storageOrphanPurge}
             </ShButton>
+            <ShButton variant="outline" onclick={downloadOrphanAssets} disabled={!stats.orphan.available || stats.orphan.count === 0 || orphanLoading}>
+                <DownloadIcon size={16} />
+                {orphanLoading ? language.storageOrphanLoading : language.storageOrphanDownloadAll}
+            </ShButton>
         </div>
+        {#if orphanError}
+            <div class="mt-3">
+                <ShAlert variant="destructive">
+                    {#snippet icon()}<TriangleAlertIcon />{/snippet}
+                    {orphanError}
+                </ShAlert>
+            </div>
+        {:else if orphanAssets}
+            <div class="mt-3 border-t border-darkborderc/50 pt-3 flex flex-col gap-2">
+                {#each orphanAssets as asset (asset.key)}
+                    <div class="flex items-center justify-between gap-3 rounded border border-darkborderc/50 px-3 py-2">
+                        <div class="min-w-0">
+                            <div class="text-textcolor text-sm truncate" title={asset.name}>{asset.name}</div>
+                            <div class="text-textcolor2 text-xs tabular-nums">{fmtBytes(asset.size)}</div>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/if}
     </div>
 
     <!-- ⑤ Per-character ─────────────────────────────────────────────────── -->
