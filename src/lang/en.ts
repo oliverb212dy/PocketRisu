@@ -2191,6 +2191,9 @@ export const languageEnglish = {
         "Not scannable yet. Refresh once the database has been loaded into server memory.",
     storageOrphanDownloadAll: "Download all orphan media",
     storageOrphanLoading: "Downloading orphan media...",
+    storageOrphanProgress: (current: number, total: number) => `Downloading file ${current} of ${total}...`,
+    storageOrphanCompressing: "Compressing orphan media...",
+    storageOrphanComplete: "Orphan media archive downloaded",
     storageOrphanPurge: "Purge orphan media",
     storageOrphanPurging: "Purging orphan media...",
     storageOrphanConfirm: (count: number, size: number) =>

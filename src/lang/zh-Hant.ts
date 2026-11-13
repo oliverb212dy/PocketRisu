@@ -2171,6 +2171,9 @@ export const languageChineseTraditional = {
         "目前尚無法掃描。請等資料庫載入伺服器記憶體後再重新整理",
     "storageOrphanDownloadAll": "下載所有未被引用的媒體",
     "storageOrphanLoading": "正在下載未被引用的媒體...",
+    "storageOrphanProgress": (current: number, total: number) => `正在下載第 ${current} / ${total} 個檔案...`,
+    "storageOrphanCompressing": "正在壓縮未被引用的媒體...",
+    "storageOrphanComplete": "已下載未被引用的媒體壓縮檔",
     "storageOrphanPurge": "清除未被引用的媒體",
     "storageOrphanPurging": "正在清除未被引用的媒體...",
     "storageOrphanConfirm": (count: number, size: number) =>
