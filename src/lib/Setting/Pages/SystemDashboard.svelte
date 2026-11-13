@@ -6,6 +6,7 @@
     import ShLoadingDialog from 'src/lib/UI/GUI/ShLoadingDialog.svelte'
     import ShSwitch from 'src/lib/UI/GUI/ShSwitch.svelte'
     import { Tooltip } from 'bits-ui'
+    import { zipSync } from 'fflate'
     import {
         RefreshCwIcon,
         HardDriveIcon,
@@ -242,7 +243,7 @@
         }
     }
 
-    async function loadOrphanAssets() {
+    async function downloadOrphanAssets() {
         orphanLoading = true
         orphanError = null
         try {
@@ -251,25 +252,28 @@
             const json = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`)
             orphanAssets = Array.isArray(json?.assets) ? json.assets : []
+            if (orphanAssets.length === 0) return
+
+            const files: Record<string, Uint8Array> = {}
+            const usedNames = new Map<string, number>()
+            for (const asset of orphanAssets) {
+                const assetRes = await fetch(`/api/asset/${Buffer.from(asset.key, 'utf-8').toString('hex')}`, {
+                    headers: { 'risu-auth': auth },
+                })
+                if (!assetRes.ok) throw new Error(`${asset.name}: HTTP ${assetRes.status}`)
+                const baseName = asset.name || 'orphan-media'
+                const duplicateCount = usedNames.get(baseName) ?? 0
+                usedNames.set(baseName, duplicateCount + 1)
+                const extension = duplicateCount > 0 ? `-${duplicateCount}` : ''
+                files[`${baseName}${extension}`] = new Uint8Array(await assetRes.arrayBuffer())
+            }
+
+            await downloadFile('orphan-media.zip', zipSync(files, { level: 0 }))
+            notifySuccess(language.successExport)
         } catch (err) {
             orphanError = err instanceof Error ? err.message : String(err)
         } finally {
             orphanLoading = false
-        }
-    }
-
-    async function downloadOrphanAsset(asset: OrphanAsset) {
-        try {
-            const auth = await forageStorage.createAuth()
-            const res = await fetch(`/api/asset/${Buffer.from(asset.key, 'utf-8').toString('hex')}`, {
-                headers: { 'risu-auth': auth },
-            })
-            if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            const data = new Uint8Array(await res.arrayBuffer())
-            await downloadFile(asset.name, data)
-            notifySuccess(language.successExport)
-        } catch (err) {
-            notifyError(`${language.storageOrphanFailed}: ${err instanceof Error ? err.message : String(err)}`)
         }
     }
 
@@ -885,9 +889,9 @@
                 <ImageOffIcon size={16} />
                 {language.storageOrphanPurge}
             </ShButton>
-            <ShButton variant="outline" onclick={loadOrphanAssets} disabled={!stats.orphan.available || stats.orphan.count === 0 || orphanLoading}>
-                <ImageOffIcon size={16} />
-                {orphanLoading ? language.storageOrphanLoading : language.storageOrphanView}
+            <ShButton variant="outline" onclick={downloadOrphanAssets} disabled={!stats.orphan.available || stats.orphan.count === 0 || orphanLoading}>
+                <DownloadIcon size={16} />
+                {orphanLoading ? language.storageOrphanLoading : language.storageOrphanDownloadAll}
             </ShButton>
         </div>
         {#if orphanError}
@@ -905,10 +909,6 @@
                             <div class="text-textcolor text-sm truncate" title={asset.name}>{asset.name}</div>
                             <div class="text-textcolor2 text-xs tabular-nums">{fmtBytes(asset.size)}</div>
                         </div>
-                        <ShButton variant="outline" size="sm" onclick={() => downloadOrphanAsset(asset)}>
-                            <DownloadIcon size={14} />
-                            {language.download}
-                        </ShButton>
                     </div>
                 {/each}
             </div>
