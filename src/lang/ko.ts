@@ -2395,9 +2395,12 @@ export const languageKorean = {
     "아직 검사할 수 없습니다. 데이터베이스가 서버 메모리에 올라온 뒤 새로고침하세요.",
   storageOrphanDownloadAll: "고아 미디어 전체 다운로드",
   storageOrphanLoading: "고아 미디어 다운로드 중...",
-  storageOrphanProgress: (current: number, total: number) => `${total}개 중 ${current}개 파일 다운로드 중...`,
-  storageOrphanCompressing: "고아 미디어 압축 중...",
-  storageOrphanComplete: "고아 미디어 압축 파일을 다운로드했습니다",
+  storageOrphanProgress: (current: number, total: number, part: number, parts: number) =>
+    `${total}개 중 ${current}개 파일 다운로드 중 (압축 파일 ${part}/${parts})...`,
+  storageOrphanCompressing: (part: number, parts: number) => `${part}/${parts} 압축 파일 생성 중...`,
+  storageOrphanComplete: (parts: number) => `고아 미디어 압축 파일 ${parts}개를 다운로드했습니다`,
+  storageOrphanFileTooLarge: (name: string) => `"${name}" 파일이 ZIP 분할 크기 제한보다 커서 다운로드할 수 없습니다.`,
+  storageOrphanArchiveTooLarge: "생성된 ZIP 파일이 안전한 크기 제한을 초과했습니다.",
   storageOrphanPurge: "고아 미디어 정리",
   storageOrphanPurging: "고아 미디어 정리 중...",
   storageOrphanConfirm: (count: number, size: number) =>

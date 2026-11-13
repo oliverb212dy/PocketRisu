@@ -108,6 +108,7 @@
     let showFullDisk = $state(false)
 
     const PAGE_SIZE = 50
+    const MAX_ORPHAN_ARCHIVE_BYTES = 1.5 * 1024 * 1024 * 1024
 
     // ── Format helpers ───────────────────────────────────────────────────────
     function fmtBytes(n: number | null | undefined): string {
@@ -253,28 +254,54 @@
                 return
             }
 
-            const files: Record<string, Uint8Array> = {}
             const usedNames = new Map<string, number>()
-            for (const [index, asset] of orphanAssets.entries()) {
-                const assetRes = await fetch(`/api/asset/${Buffer.from(asset.key, 'utf-8').toString('hex')}`, {
-                    headers: { 'risu-auth': auth },
-                })
-                if (!assetRes.ok) throw new Error(`${asset.name}: HTTP ${assetRes.status}`)
-                const baseName = asset.name || 'orphan-media'
-                const duplicateCount = usedNames.get(baseName) ?? 0
-                usedNames.set(baseName, duplicateCount + 1)
-                const extension = duplicateCount > 0 ? `-${duplicateCount}` : ''
-                files[`${baseName}${extension}`] = new Uint8Array(await assetRes.arrayBuffer())
-                orphanProgress = 10 + Math.round(((index + 1) / orphanAssets.length) * 80)
-                orphanProgressText = language.storageOrphanProgress(index + 1, orphanAssets.length)
+            const parts: typeof orphanAssets[] = []
+            let currentPart: typeof orphanAssets = []
+            let currentPartBytes = 0
+            for (const asset of orphanAssets) {
+                if (asset.size > MAX_ORPHAN_ARCHIVE_BYTES) {
+                    throw new Error(language.storageOrphanFileTooLarge(asset.name))
+                }
+                if (currentPart.length > 0 && currentPartBytes + asset.size > MAX_ORPHAN_ARCHIVE_BYTES) {
+                    parts.push(currentPart)
+                    currentPart = []
+                    currentPartBytes = 0
+                }
+                currentPart.push(asset)
+                currentPartBytes += asset.size
+            }
+            if (currentPart.length > 0) parts.push(currentPart)
+
+            let completedFiles = 0
+            for (const [partIndex, part] of parts.entries()) {
+                const files: Record<string, Uint8Array> = {}
+                for (const asset of part) {
+                    const assetRes = await fetch(`/api/asset/${Buffer.from(asset.key, 'utf-8').toString('hex')}`, {
+                        headers: { 'risu-auth': auth },
+                    })
+                    if (!assetRes.ok) throw new Error(`${asset.name}: HTTP ${assetRes.status}`)
+                    const baseName = asset.name || 'orphan-media'
+                    const duplicateCount = usedNames.get(baseName) ?? 0
+                    usedNames.set(baseName, duplicateCount + 1)
+                    const extension = duplicateCount > 0 ? `-${duplicateCount}` : ''
+                    files[`${baseName}${extension}`] = new Uint8Array(await assetRes.arrayBuffer())
+                    completedFiles++
+                        orphanProgress = 10 + Math.round((completedFiles / orphanAssets.length) * 70)
+                    orphanProgressText = language.storageOrphanProgress(completedFiles, orphanAssets.length, partIndex + 1, parts.length)
+                }
+
+                    orphanProgress = 80 + Math.round(((partIndex + 1) / parts.length) * 20)
+                orphanProgressText = language.storageOrphanCompressing(partIndex + 1, parts.length)
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+                const archive = zipSync(files, { level: 0 })
+                if (archive.byteLength > MAX_ORPHAN_ARCHIVE_BYTES) {
+                    throw new Error(language.storageOrphanArchiveTooLarge)
+                }
+                await downloadFile(`orphan-media-part-${String(partIndex + 1).padStart(3, '0')}.zip`, archive)
             }
 
-            orphanProgress = 95
-            orphanProgressText = language.storageOrphanCompressing
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-            await downloadFile('orphan-media.zip', zipSync(files, { level: 0 }))
             orphanProgress = 100
-            orphanProgressText = language.storageOrphanComplete
+            orphanProgressText = language.storageOrphanComplete(parts.length)
             notifySuccess(language.successExport)
         } catch (err) {
             orphanError = err instanceof Error ? err.message : String(err)

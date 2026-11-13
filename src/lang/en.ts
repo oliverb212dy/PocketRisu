@@ -2191,9 +2191,12 @@ export const languageEnglish = {
         "Not scannable yet. Refresh once the database has been loaded into server memory.",
     storageOrphanDownloadAll: "Download all orphan media",
     storageOrphanLoading: "Downloading orphan media...",
-    storageOrphanProgress: (current: number, total: number) => `Downloading file ${current} of ${total}...`,
-    storageOrphanCompressing: "Compressing orphan media...",
-    storageOrphanComplete: "Orphan media archive downloaded",
+    storageOrphanProgress: (current: number, total: number, part: number, parts: number) =>
+        `Downloading file ${current} of ${total} (part ${part} of ${parts})...`,
+    storageOrphanCompressing: (part: number, parts: number) => `Compressing part ${part} of ${parts}...`,
+    storageOrphanComplete: (parts: number) => `Downloaded ${parts} orphan media ZIP file(s)`,
+    storageOrphanFileTooLarge: (name: string) => `Cannot download "${name}" because it is larger than the ZIP part limit.`,
+    storageOrphanArchiveTooLarge: "The generated ZIP part exceeded the safe size limit.",
     storageOrphanPurge: "Purge orphan media",
     storageOrphanPurging: "Purging orphan media...",
     storageOrphanConfirm: (count: number, size: number) =>
