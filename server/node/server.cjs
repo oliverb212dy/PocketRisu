@@ -7863,41 +7863,55 @@ function isNewSaveWithNothingToSweep(dbObj, { includeAssets, includeRemotes, ass
 
 const EMPTY_ASSET_SWEEP = Object.freeze({ ok: true, deleted: 0, assetsDeleted: 0, remotesDeleted: 0, bytes: 0, scanned: 0 });
 
+async function findOrphanAssetRows() {
+    const assets = kvListWithSizes('assets/');
+    await flushPendingDb();
+    const raw = kvGet(DB_BLOB_KEY);
+    if (!raw) return { error: 'No database blob' };
+    const dbObj = await decodeRisuSave(raw);
+    if (isNewSaveWithNothingToSweep(dbObj, { includeAssets: true, includeRemotes: false, assets })) {
+        return { assets, orphanAssets: [], dbObj, empty: true };
+    }
+    if (!dbObj || !Array.isArray(dbObj.characters)) {
+        return { error: 'Database decode failed' };
+    }
+
+    const uncleanable = buildUncleanableSet(dbObj);
+    try {
+        addLiveManifestRefs(uncleanable, dbObj);
+    } catch (error) {
+        return { error: `Manifest reference scan failed — refusing to inspect orphans: ${error?.message || error}` };
+    }
+    try {
+        addArchivedCharacterRefs(uncleanable, dbObj);
+    } catch (error) {
+        return { error: `Deactivated-character reference scan failed — refusing to inspect orphans: ${error?.message || error}` };
+    }
+    if (uncleanable.size === 0 && assets.length > 0) {
+        return { error: 'Reference scan produced no references — refusing to inspect orphans' };
+    }
+    for (const bn of collectPluginStorageAssetRefs()) uncleanable.add(bn);
+
+    return {
+        assets,
+        orphanAssets: assets.filter((it) => !uncleanable.has(statsBasename(it.key))),
+        dbObj,
+    };
+}
+
 async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemotes = false, checkpointLabel = 'AssetSweep' } = {}) {
     let dbObj;
     // updated_at is stored after the value BLOB, so reading it walks the whole
     // value's overflow pages — for every asset that took minutes on a large
     // library (#102). Only unreferenced candidates need it; it is read below.
     const assets = includeAssets ? kvListWithSizes('assets/') : [];
-    const uncleanable = new Set();
+    let orphanAssetRows = [];
     if (includeAssets) {
-        await flushPendingDb();
-        const raw = kvGet(DB_BLOB_KEY);
-        if (!raw) return { error: 'No database blob' };
-        dbObj = await decodeRisuSave(raw);
-        if (isNewSaveWithNothingToSweep(dbObj, { includeAssets, includeRemotes, assets })) return { ...EMPTY_ASSET_SWEEP };
-        if (!dbObj || !Array.isArray(dbObj.characters)) return { error: 'Database decode failed' };
-
-        for (const bn of buildUncleanableSet(dbObj)) uncleanable.add(bn);
-        try {
-            addLiveManifestRefs(uncleanable, dbObj);
-        } catch (error) {
-            return { error: `Manifest reference scan failed — refusing to purge: ${error?.message || error}` };
-        }
-        try {
-            addArchivedCharacterRefs(uncleanable, dbObj);
-        } catch (error) {
-            return { error: `Deactivated-character reference scan failed — refusing to purge: ${error?.message || error}` };
-        }
-
-        // A walker that returns nothing while assets exist means the decode
-        // produced a shape we do not understand — every asset would look orphaned.
-        // Refuse rather than delete the library. Checked before plugin-storage refs
-        // are unioned in so those can't mask a bad walk.
-        if (uncleanable.size === 0 && assets.length > 0) {
-            return { error: 'Reference scan produced no references — refusing to purge' };
-        }
-        for (const bn of collectPluginStorageAssetRefs()) uncleanable.add(bn);
+        const scan = await findOrphanAssetRows();
+        if (scan.error) return { error: scan.error.replace('inspect orphans', 'purge') };
+        if (scan.empty) return { ...EMPTY_ASSET_SWEEP };
+        orphanAssetRows = scan.orphanAssets;
+        dbObj = scan.dbObj;
     } else {
         // Remote-only sweep (the boot auto-sweep with asset cleanup off): it
         // needs only the live and deactivated chaIds. The stripped dbCache
@@ -7912,8 +7926,7 @@ async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemot
 
     const now = Date.now();
     const assetVictims = includeAssets
-        ? assets.filter((it) => {
-            if (uncleanable.has(statsBasename(it.key))) return false;
+        ? orphanAssetRows.filter((it) => {
             if (assetGraceMs > 0 && now - Number(kvGetUpdatedAt(it.key) || 0) <= assetGraceMs) return false;
             return true;
         })
@@ -8408,6 +8421,22 @@ app.get('/api/db/stats/modules', async (req, res, next) => {
 
         modules.sort((a, b) => b.totalBytes - a.totalBytes);
         res.json({ modules, etag: dbEtag });
+    } catch (err) { next(err); }
+});
+
+app.get('/api/db/assets/orphans', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const result = await queueStorageOperation(() => findOrphanAssetRows());
+        if (result.error) return res.status(400).json(result);
+        res.json({
+            assets: result.orphanAssets.map((it) => ({
+                key: it.key,
+                name: statsBasename(it.key),
+                size: it.size,
+            })),
+            scanned: result.assets.length,
+        });
     } catch (err) { next(err); }
 });
 
