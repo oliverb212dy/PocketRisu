@@ -254,54 +254,45 @@
                 return
             }
 
-            const usedNames = new Map<string, number>()
-            const parts: typeof orphanAssets[] = []
-            let currentPart: typeof orphanAssets = []
-            let currentPartBytes = 0
-            for (const asset of orphanAssets) {
-                if (asset.size > MAX_ORPHAN_ARCHIVE_BYTES) {
-                    throw new Error(language.storageOrphanFileTooLarge(asset.name))
-                }
-                if (currentPart.length > 0 && currentPartBytes + asset.size > MAX_ORPHAN_ARCHIVE_BYTES) {
-                    parts.push(currentPart)
-                    currentPart = []
-                    currentPartBytes = 0
-                }
-                currentPart.push(asset)
-                currentPartBytes += asset.size
-            }
-            if (currentPart.length > 0) parts.push(currentPart)
-
             let completedFiles = 0
-            for (const [partIndex, part] of parts.entries()) {
-                const files: Record<string, Uint8Array> = {}
-                for (const asset of part) {
-                    const assetRes = await fetch(`/api/asset/${Buffer.from(asset.key, 'utf-8').toString('hex')}`, {
-                        headers: { 'risu-auth': auth },
-                    })
-                    if (!assetRes.ok) throw new Error(`${asset.name}: HTTP ${assetRes.status}`)
-                    const baseName = asset.name || 'orphan-media'
-                    const duplicateCount = usedNames.get(baseName) ?? 0
-                    usedNames.set(baseName, duplicateCount + 1)
-                    const extension = duplicateCount > 0 ? `-${duplicateCount}` : ''
-                    files[`${baseName}${extension}`] = new Uint8Array(await assetRes.arrayBuffer())
-                    completedFiles++
-                        orphanProgress = 10 + Math.round((completedFiles / orphanAssets.length) * 70)
-                    orphanProgressText = language.storageOrphanProgress(completedFiles, orphanAssets.length, partIndex + 1, parts.length)
-                }
-
-                    orphanProgress = 80 + Math.round(((partIndex + 1) / parts.length) * 20)
-                orphanProgressText = language.storageOrphanCompressing(partIndex + 1, parts.length)
+            let partIndex = 0
+            let files: Record<string, Uint8Array> = {}
+            let partBytes = 0
+            const usedNames = new Map<string, number>()
+            const downloadPart = async () => {
+                if (Object.keys(files).length === 0) return
+                partIndex++
+                orphanProgressText = language.storageOrphanCompressing(partIndex)
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
                 const archive = zipSync(files, { level: 0 })
-                if (archive.byteLength > MAX_ORPHAN_ARCHIVE_BYTES) {
-                    throw new Error(language.storageOrphanArchiveTooLarge)
-                }
-                await downloadFile(`orphan-media-part-${String(partIndex + 1).padStart(3, '0')}.zip`, archive)
+                await downloadFile(`orphan-media-part-${String(partIndex).padStart(3, '0')}.zip`, archive)
+                files = {}
+                partBytes = 0
             }
 
+            for (const asset of orphanAssets) {
+                const assetRes = await fetch(`/api/asset/${Buffer.from(asset.key, 'utf-8').toString('hex')}`, {
+                    headers: { 'risu-auth': auth },
+                })
+                if (!assetRes.ok) throw new Error(`${asset.name}: HTTP ${assetRes.status}`)
+                const data = new Uint8Array(await assetRes.arrayBuffer())
+                if (Object.keys(files).length > 0 && partBytes + data.byteLength > MAX_ORPHAN_ARCHIVE_BYTES) {
+                    await downloadPart()
+                }
+                const baseName = asset.name || 'orphan-media'
+                const duplicateCount = usedNames.get(baseName) ?? 0
+                usedNames.set(baseName, duplicateCount + 1)
+                const extension = duplicateCount > 0 ? `-${duplicateCount}` : ''
+                files[`${baseName}${extension}`] = data
+                partBytes += data.byteLength
+                completedFiles++
+                orphanProgress = 10 + Math.round((completedFiles / orphanAssets.length) * 70)
+                orphanProgressText = language.storageOrphanProgress(completedFiles, orphanAssets.length, partIndex + 1)
+            }
+            await downloadPart()
+
             orphanProgress = 100
-            orphanProgressText = language.storageOrphanComplete(parts.length)
+            orphanProgressText = language.storageOrphanComplete(partIndex)
             notifySuccess(language.successExport)
         } catch (err) {
             orphanError = err instanceof Error ? err.message : String(err)

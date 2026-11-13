@@ -2171,12 +2171,10 @@ export const languageChineseTraditional = {
         "目前尚無法掃描。請等資料庫載入伺服器記憶體後再重新整理",
     "storageOrphanDownloadAll": "下載所有未被引用的媒體",
     "storageOrphanLoading": "正在下載未被引用的媒體...",
-    "storageOrphanProgress": (current: number, total: number, part: number, parts: number) =>
-        `正在下載第 ${current} / ${total} 個檔案（壓縮檔 ${part} / ${parts}）...`,
-    "storageOrphanCompressing": (part: number, parts: number) => `正在建立第 ${part} / ${parts} 個壓縮檔...`,
+    "storageOrphanProgress": (current: number, total: number, part: number) =>
+        `正在下載第 ${current} / ${total} 個檔案（壓縮檔 ${part}）...`,
+    "storageOrphanCompressing": (part: number) => `正在建立第 ${part} 個壓縮檔...`,
     "storageOrphanComplete": (parts: number) => `已下載 ${parts} 個未被引用媒體壓縮檔`,
-    "storageOrphanFileTooLarge": (name: string) => `"${name}" 大於 ZIP 分割大小限制，無法下載`,
-    "storageOrphanArchiveTooLarge": "建立的 ZIP 檔案超過安全大小限制",
     "storageOrphanPurge": "清除未被引用的媒體",
     "storageOrphanPurging": "正在清除未被引用的媒體...",
     "storageOrphanConfirm": (count: number, size: number) =>
